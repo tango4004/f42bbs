@@ -1,0 +1,18 @@
+{
+  "nodes": [
+    {
+      "node_id": "1:42/1",
+      "name": "arm1",
+      "transports": ["agentmail:f42bbs-arm1@agentmail.to"],
+      "topics": ["1bit.graphics"],
+      "trust": "trusted"
+    },
+    {
+      "node_id": "1:42/2",
+      "name": "arm2",
+      "transports": ["agentmail:f42bbs-arm2@agentmail.to"],
+      "topics": [],
+      "trust": "trusted"
+    }
+  ]
+}
