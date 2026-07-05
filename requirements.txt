@@ -1,3 +1,4 @@
+agentmail
 anthropic
 arxiv
 python-dotenv
