@@ -344,11 +344,87 @@ deferred items. They do not alter v0.2 behaviour and are targeted for v0.3,
 | R5 | **Signed distributed nodelist.** Replace static `nodes.json` with a signed, event-driven record on `net.nodelist`. | At open scale, trustable discovery is the real constraint, not transport. |
 | R6 | **Structured `refs[]`.** Promote provenance entries from bare strings to typed objects (`{type, id, url}` for url / arXiv / DOI / GitHub / RFC). | Enables validation, deduplication, and rendering of sources; bare strings conflate locator and type. |
 | R7 | **Structured `REQUEST` + capability negotiation.** Optional typed `REQUEST` fields (freshness window, language, word limit) and a `caps` field with a rule for negotiating *critical* extensions. Rides with R4. | Lets a querying node constrain the answer and lets nodes advertise/agree on optional behaviour without version bumps. |
+| R8 | **Points (`.point`) as sub-nodes.** Extend addressing to `zone:net/node.point`. A point has no external transport of its own and reaches the network only through its node. | Gives privacy-by-addressing and a home for transport-less entities (agent-in-chat, executors, Sierra). See §13.1. |
+| R9 | **Topic visibility.** A `visibility: public \| local` flag per topic. `local` topics are never served to peers; `public` topics may be. | Without it, federation is all-or-nothing — either everything leaks to a peer or nothing can be shared. |
+| R10 | **Peering handshake (`net.peer`).** A protocol for two nodes to exchange `node_id`, ed25519 public key (R2), transports, and capabilities, recording each other in the peer table at `unverified`. | The peer table exists but is filled by hand; there is no protocol for two nodes to introduce themselves. See §13.1. |
+| R11 | **Directory bootstrap.** A human-entered form (on tango/foxtrot) for first contact, evolving into a signed, browsable directory (R5) from which a node connects to already-listed peers. | First contact between strangers cannot be automatic (anti-sybil); a directory turns a set of two-way links into a network. See §13.1. |
 
 Deferred beyond v0.3: private (point-to-point) netmail, key rotation, web UI,
 generic signed-object unification (NODE_RECORD / KEY_UPDATE / CAPABILITY as one
 schema) — an architecture note to revisit only after Phase 2, once the concrete
 message types have shown their real edges.
+
+### 13.1 Federation & Discovery (Phase 2, non-normative)
+
+This subsection sketches how an F42BBS reaches beyond a single operator's nodes:
+how strangers learn of each other, take content, and give it. It is a Phase 2
+concern — it comes **after** the core works on two trusted nodes and after
+signing (R1/R2) lands. Nothing here alters v0.2. It gathers R8–R11 into one
+picture so implementers see the whole shape rather than scattered hints.
+
+#### Points as sub-nodes (R8)
+
+`node_id` extends from `zone:net/node` to `zone:net/node.point` (Fido's
+Node/Point model).
+
+- A **node** is a full participant: it has a transport address, is visible
+  externally, relays, and holds state (SQLite, dedup, SEEN-BY).
+- A **point** is a sub-node *behind* a node. It has **no external transport of
+  its own** and reaches the network only through its node. Externally, peers see
+  only the node (`1:42/1`); the points behind it (`.0`, `.1`, …) are internal
+  structure.
+
+Rules:
+
+- **Local traffic between points of the same node MUST NOT be relayed.** When
+  both `src` and `dst` are the node's own points (`1:42/1.1 → 1:42/1.2`),
+  delivery is local and never leaves the node. Privacy is in the address, not in
+  a transport toggle — this is "non-routable by default."
+- **Outbound from a point is signed by its node.** A point has no external key;
+  its node signs on its behalf (`origin: 1:42/1`), and the point id, if exposed
+  at all, is an internal detail peers do not route on.
+- Ephemeral entities fit here cleanly: **agent-in-chat is `zone:net/node.0`** — a
+  point behind a node, `ephemeral`, MUST NOT relay, MAY originate REQUEST/POST
+  through its node. Executors and Sierra are likewise points, not nodes.
+
+#### How strangers exchange content
+
+The mechanism is four distinct parts, not one feature:
+
+1. **Bootstrap — out-of-band, human-first (R11).** Two BBSes that know nothing
+   of each other cannot discover each other automatically; there is no magic
+   opening in the graph, and there MUST NOT be (anti-sybil, anti-spam). First
+   contact is always out-of-band: a human gives one node the transport address
+   of another. Initial form: a manual entry form on tango/foxtrot where an
+   operator types a peer's address + key. Later form: a signed, browsable
+   **directory** (R5) from which a node connects to already-listed peers by
+   selection (e.g. a listed `bitcoindigest` BBS), no manual typing.
+
+2. **Peering handshake (R10).** Having an address, a node sends a `REQUEST` on
+   the reserved topic `net.peer` carrying its `node_id`, ed25519 public key,
+   transports, and offered/wanted topics. The reply carries the same. Each side
+   records the other in its peer table at `unverified`. From here, the peer's
+   signed packets can be verified against its key.
+
+3. **Taking content — pull (R9).** A peer sends `REQUEST{topic}`. The node
+   answers `DIGEST` with `refs` **only if** the topic is marked
+   `visibility: public` and the peer's trust level permits. The gate is on the
+   serving side: `local` topics are never served; `unverified` peers get only
+   public topics; `trusted` peers may get more. The operator controls what
+   leaves, not the requester.
+
+4. **Continuous exchange — subscription / echo.** For an ongoing flow rather
+   than one-shot pull, a peer sends in-band areafix `+topic`; the node adds it as
+   a subscriber and every new `DIGEST` on that topic fans out to it
+   automatically (the fan-out already in the daemon). Symmetrically, we subscribe
+   at the peer. This is Fido echomail: a topic replicates across the peered
+   graph, each new post spreading along subscriptions, with `SEEN-BY` /
+   `max_hops` preventing loops.
+
+Trust then grows `unverified → trusted`, by hand at first and via web-of-trust
+(R5) later. Ordering discipline holds throughout: two-way peering between our own
+nodes works first; the handshake opens outward only once signing (R1/R2) is in
+place.
 
 ---
 
@@ -363,6 +439,8 @@ message types have shown their real edges.
   non-identifying; unknown fields MUST be ignored; `msg_id` derivation excludes
   routing/presentation fields. Roadmap extended with R6 (structured `refs[]`)
   and R7 (structured `REQUEST` + `caps`); R1 reworded to separate the immutable
-  signed envelope from mutable routing.
+  signed envelope from mutable routing. Roadmap further extended with R8–R11 and
+  a Federation & Discovery subsection (§13.1): points (`.point`) as sub-nodes,
+  topic visibility, `net.peer` handshake, and directory bootstrap — all Phase 2.
 - **v0.1** — Initial draft: Fido-style BBS over AgentMail; inbox-as-node,
   email-as-packet.
