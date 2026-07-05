@@ -1,0 +1,16 @@
+version: "3.8"
+services:
+  f42bbs:
+    build: .
+    restart: unless-stopped
+    environment:
+      - AGENTMAIL_API_KEY=${AGENTMAIL_API_KEY}
+      - F42BBS_NODE_ID=${F42BBS_NODE_ID}
+      - F42BBS_INBOX=${F42BBS_INBOX}
+      - F42BBS_TOPIC=${F42BBS_TOPIC:-1bit.graphics}
+      - F42BBS_KEY=${F42BBS_KEY:-f42bbs-dev-key}
+      - F42BBS_POLL=${F42BBS_POLL:-60}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    volumes:
+      - ./f42bbs.db:/app/f42bbs.db
+      - ./node.log:/app/node.log
