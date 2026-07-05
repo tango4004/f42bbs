@@ -76,9 +76,9 @@ if not INBOX:
 
 # ---- AgentMail client + send adapter ----------------------------------------
 
-from agentmail import Client
+from agentmail import AgentMail
 
-_client = Client(api_key=API_KEY)
+_client = AgentMail(api_key=API_KEY)
 
 
 class _SendAdapter:
