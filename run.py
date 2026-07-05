@@ -87,7 +87,7 @@ class _SendAdapter:
         self._c = client
 
     def send_message(self, inbox_id, to, subject, text):
-        self._c.messages.send(inbox_id=inbox_id, to=to, subject=subject, text=text)
+        self._c.inboxes.messages.send(inbox_id=inbox_id, to=to, subject=subject, text=text)
 
 
 # ---- assembly ---------------------------------------------------------------
@@ -156,10 +156,12 @@ def _handle(raw):
 
 def poll_once():
     try:
-        threads = _client.threads.list(inbox_id=INBOX)
+        threads = _client.inboxes.threads.list(INBOX)
         processed = 0
         for t in (getattr(threads, "threads", None) or []):
-            for m in (getattr(t, "messages", None) or []):
+            thread_id = t.thread_id
+            msgs = _client.inboxes.threads.get(INBOX, thread_id)
+            for m in (getattr(msgs, "messages", None) or []):
                 raw = getattr(m, "text", "") or ""
                 _handle(raw)
                 processed += 1
