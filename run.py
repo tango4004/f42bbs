@@ -144,24 +144,29 @@ def send_hello():
             print("run.py: hello send failed to %s: %s" % (p["node_id"], e))
 
 
+def _handle(raw):
+    """Handle incoming message from threads."""
+    env = parse_envelope_from_mail(raw, KEY)
+    if env is None:
+        return
+    result = daemon.inbound(env)
+    if result not in ("duplicate", "loop"):
+        print("run.py: inbound %s %s -> %s" % (env.type, env.msg_id, result))
+
+
 def poll_once():
     try:
-        msgs = _client.messages.list(inbox_id=INBOX)
+        threads = _client.threads.list(inbox_id=INBOX)
+        processed = 0
+        for t in (getattr(threads, "threads", None) or []):
+            for m in (getattr(t, "messages", None) or []):
+                raw = getattr(m, "text", "") or ""
+                _handle(raw)
+                processed += 1
     except Exception as e:
         print("run.py: poll error: %s" % e)
         return 0
-    processed = 0
-    for m in (getattr(msgs, "messages", None) or []):
-        raw = getattr(m, "text", "") or ""
-        env = parse_envelope_from_mail(raw, KEY)
-        if env is None:
-            continue
-        result = daemon.inbound(env)
-        if result not in ("duplicate", "loop"):
-            print("run.py: inbound %s %s -> %s" % (env.type, env.msg_id, result))
-        processed += 1
     return processed
-
 
 def run_beat():
     """Optional. Build a digest and inject it locally so it is stored and
