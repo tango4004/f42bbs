@@ -7,7 +7,7 @@ Run: python3 test_live.py
 import os, sys, json, time
 from dotenv import load_dotenv
 load_dotenv('/home/doo/foxtrot/.env')
-from agentmail import Client
+from agentmail import AgentMail as Client
 from envelope import make_msg_id, sign
 from transport.agentmail import parse_envelope_from_mail
 from datetime import datetime
