@@ -126,3 +126,12 @@ class DB:
         cursor.execute("SELECT topic FROM subscriptions WHERE node_id = ?", (node_id,))
         rows = cursor.fetchall()
         return [row[0] for row in rows]
+
+    def get_latest(self, topic: str) -> Optional[str]:
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT raw FROM messages WHERE topic = ? ORDER BY created_at DESC LIMIT 1",
+            (topic,)
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
