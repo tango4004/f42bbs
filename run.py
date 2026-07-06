@@ -156,15 +156,13 @@ def _handle(raw):
 
 def poll_once():
     try:
-        threads = _client.inboxes.threads.list(INBOX)
+        # AgentMail 0.5.6: inboxes.messages.list(inbox_id) -> .messages[]
+        result = _client.inboxes.messages.list(INBOX)
         processed = 0
-        for t in (getattr(threads, "threads", None) or []):
-            thread_id = t.thread_id
-            msgs = _client.inboxes.threads.get(INBOX, thread_id)
-            for m in (getattr(msgs, "messages", None) or []):
-                raw = getattr(m, "text", "") or ""
-                _handle(raw)
-                processed += 1
+        for m in (getattr(result, "messages", None) or []):
+            raw = getattr(m, "text", "") or ""
+            _handle(raw)
+            processed += 1
     except Exception as e:
         print("run.py: poll error: %s" % e)
         return 0
