@@ -1,5 +1,18 @@
+import requests
 from flask import Blueprint, request, jsonify
 from envelope import Envelope, EnvelopeError
+
+# --- Outbound ---
+
+class HttpTransport:
+    def send(self, envelope: Envelope, to_address: str) -> bool:
+        try:
+            response = requests.post(to_address, json=envelope.emit(), timeout=10)
+            return response.status_code == 200
+        except Exception:
+            return False
+
+# --- Inbound blueprint ---
 
 http_transport = Blueprint('http_transport', __name__)
 
@@ -24,7 +37,7 @@ def inbound():
 
     try:
         env = Envelope.parse(data, _shared_key)
-    except EnvelopeError as e:
+    except EnvelopeError:
         return jsonify({"error": "invalid signature"}), 403
 
     try:
