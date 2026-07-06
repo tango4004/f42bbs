@@ -5,7 +5,7 @@ from typing import Optional, List, Dict
 
 class DB:
     def __init__(self, path: str):
-        self.connection = sqlite3.connect(path)
+        self.connection = sqlite3.connect(path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
         self._create_tables()
 
@@ -128,10 +128,16 @@ class DB:
         return [row[0] for row in rows]
 
     def get_latest(self, topic: str) -> Optional[str]:
+        import json as _json
         cursor = self.connection.cursor()
         cursor.execute(
             "SELECT raw FROM messages WHERE topic = ? ORDER BY created_at DESC LIMIT 1",
             (topic,)
         )
         row = cursor.fetchone()
-        return row[0] if row else None
+        if not row:
+            return None
+        try:
+            return _json.loads(row[0]).get('body')
+        except Exception:
+            return row[0]
