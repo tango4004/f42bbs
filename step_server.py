@@ -156,5 +156,10 @@ def step():
     return Response("error: invalid request", content_type="text/plain", status=400)
 
 
+
+@app.route("/health", methods=["GET"])
+def health():
+    return "step ok", 200
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=STEP_PORT, debug=False)
