@@ -426,6 +426,146 @@ Trust then grows `unverified → trusted`, by hand at first and via web-of-trust
 nodes works first; the handshake opens outward only once signing (R1/R2) is in
 place.
 
+### 13.2 Network Formation & Governance (Phase 2, non-normative)
+
+§13.1 covers how two nodes exchange content. This subsection covers how the
+network *forms*: how a stranger joins, how the topology is agreed, and who
+governs it. It depends on ed25519 origin signatures (R2) — the whole model rests
+on asymmetric signatures a third party can verify. HMAC cannot express
+"A vouches for B" to anyone who does not hold A's key.
+
+#### Topology: a tree of points
+
+The network is a **tree**, not a flat mesh. There is one kind of entity — a
+**point** — with a parent (the point that admitted it). A point may itself admit
+children: nodes, chats, agents. The address *is* the path: `1:42/2.1.7` reads as
+root → node 2 → its point 1 → its point 7.
+
+The tree gives three things from one structure:
+
+1. **Trust chain** — the path to the root is the chain of sponsors.
+2. **Address** — self-describing (`1:42/2.1` says where you are in the tree).
+3. **Topic routing** — a topic flows along its branch, not across the whole
+   network. A subtree subscribes to what is relevant to it; hubs aggregate their
+   branch. This is Fido echomail areas: hierarchical propagation, locality for
+   free. A flat mesh cannot express this — every topic floods every node.
+
+#### Joining: admission by sponsorship
+
+A stranger does not self-register. Joining is two steps, through a sponsor:
+
+1. **Attach to a node.** The newcomer asks an existing node X to admit it. X
+   decides — admission is X's right. If X admits, the newcomer starts as a point
+   behind X (`X.n`).
+2. **Grow into a node.** The point may later grow into a full node with its own
+   `node_id`. Its sponsor X vouches for it to the network.
+
+**Sponsorship is a signature.** X admits Y → X signs Y's public key with X's key
+→ the signed record propagates. Anyone can verify: X's signature over Y is valid,
+and X is itself reachable by a valid chain to a root. This makes the whole
+membership **verifiable by anyone**, with no central arbiter — like git, where
+every commit is signed and references its parent, so history is
+cryptographically unforgeable without a central authority. Consequences: no
+shared secret is needed (Y generates its own key, X signs the public half —
+this is the exit from a hardcoded shared HMAC key); and accountability is
+built in (if Y misbehaves, the sponsor is visible).
+
+#### The nodelist: a replicated tree of signatures
+
+The nodelist is not a list held by one server. It is a **replicated tree of
+ed25519 signatures**, and it answers the "where does the truth about topology
+live" question as a third thing, neither pure DNS nor pure consensus:
+
+- **Replicated at every node** (like a consensus system — no single point of
+  failure). Changes propagate as ordinary signed records over a reserved topic
+  (`net.nodelist`), using the fan-out that already exists.
+- **Rooted in truth** (like DNS — a genesis anchor, no sybil voting). A node is
+  valid iff there is an unbroken chain of sponsor signatures from it to a root.
+- **Conflicts resolved by verification, not by an arbiter.** A node is accepted
+  because it presents a valid sponsor chain — verifiable by all, no vote needed.
+  An invalid chain is discarded automatically, not out-voted. Two records for the
+  same node with valid chains merge like git branches.
+
+A GET `/nodelist` endpoint serves the current signed tree for bootstrap. Read is
+free; the response is signed so a reader can confirm it is genuinely the network
+and not a forgery. Early on, nodes read from a bootstrap node directly; later the
+same signed object replicates over `net.nodelist` and no node is a required point
+of read.
+
+#### Root: keys, not servers
+
+The root is **not a server** — it is a set of offline ed25519 keys. This is
+deliberate and load-bearing: a root *server* dies with its hardware and takes the
+network's growth with it. A root *key* signs the genesis and goes offline — there
+is no server to break. The signed chains have already propagated and
+self-verify without it. (Like a genesis block: the signer can vanish; what
+matters is that the genesis is signed and everyone can verify it.)
+
+Governance is **2-of-3**: three root keys, any two sign root operations (admit a
+genesis node, revoke, rotate). Keys are held offline by three independent
+holders — independence is what makes 2-of-3 real; three keys in one person's
+hands is 2-of-3 in name only.
+
+The nodelist carries the root set:
+```json
+{
+  "roots": [
+    {"key_id": "root-1", "pubkey": "ed25519:...", "status": "active"},
+    {"key_id": "root-2", "pubkey": "ed25519:...", "status": "active"},
+    {"key_id": "root-3", "pubkey": "ed25519:...", "status": "active"}
+  ],
+  "threshold": 2
+}
+```
+Every node verifies that root-set changes are signed by 2-of-3 current active
+root keys, and that each node's sponsor chain terminates at an active root.
+
+#### Progressive decentralization
+
+The bootstrap holder starts with all three keys and hands control away as trust
+appears, monotonically reducing their own power:
+
+- **Phase 0 — genesis.** One holder has all three keys. 2-of-3 = that holder.
+  Full control. The network works, but root *is* one person.
+- **Phase 1 — first trustee.** A trusted party A appears. The holder revokes one
+  own key, admits A's key. Now holder(2) + A(1): nothing happens without the
+  holder, but A is in the consensus.
+- **Phase 2 — second trustee.** B appears. The two current roots agree offline on
+  B. The holder revokes another own key, admits B. Now holder(1) + A(1) + B(1):
+  a real 2-of-3 among three independent people.
+- **Phase 3 — network without the founder.** Any two of {holder, A, B} hold
+  consensus. The founder can leave entirely; the remaining two recruit a third.
+
+**Honesty requirement (normative for any public claim):** until Phase 2, the
+root consensus is nominally 2-of-3 but is *in fact* controlled by the bootstrap
+holder, who can unilaterally revoke and promote. Early phases MUST be described
+as what they are — a trusted bootstrap — not as decentralization. Whoever joins
+in Phase 0–1 is trusting the founder personally and must understand that. This is
+not a flaw; it is an honest bootstrap made an explicit procedure rather than an
+emergent accident.
+
+#### Revocation
+
+- **Revoking a node — pass-through.** A revoked node becomes a transparent relay,
+  not a hole. Transit traffic through its position continues to the next node on
+  the branch (the subtree stays connected); traffic *addressed to* it is not
+  generated (senders see `revoked` in the nodelist) and is dropped by neighbours
+  if already in flight. What it already relayed, and what already propagated,
+  stays in the network. This solves the tree's orphaning problem for the
+  revoked-but-alive case. (Revoked-and-physically-dead — where the relay itself
+  is offline — needs a fallback route / re-parenting in the nodelist; deferred as
+  a routing-resilience concern.)
+- **Revoking / rotating a root key — 2-of-3.** A compromised or departed root
+  key: the remaining two sign a revoke of it and admit a new third. The network
+  does not halt; two valid keys hold consensus while a third is found.
+
+#### Ordering
+
+This is Phase 2, and it presupposes R2 (ed25519). Build order: R1/R2 signing →
+`net.peer` handshake (§13.1) → nodelist as signed tree → root set + governance.
+Nothing here is normative for v0.2; it is the shape the network takes as it opens
+beyond a single operator.
+
 ---
 
 ## 14. Changelog
@@ -442,5 +582,10 @@ place.
   signed envelope from mutable routing. Roadmap further extended with R8–R11 and
   a Federation & Discovery subsection (§13.1): points (`.point`) as sub-nodes,
   topic visibility, `net.peer` handshake, and directory bootstrap — all Phase 2.
+  Added §13.2 Network Formation & Governance (Phase 2): tree topology of points,
+  admission by sponsor signature, nodelist as a replicated tree of ed25519
+  signatures (git-like), root as 2-of-3 offline keys (not servers), progressive
+  decentralization (Phase 0→3 with an explicit honesty requirement), and
+  revocation by pass-through (node) / 2-of-3 rotation (root key).
 - **v0.1** — Initial draft: Fido-style BBS over AgentMail; inbox-as-node,
   email-as-packet.
