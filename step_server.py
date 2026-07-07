@@ -32,6 +32,11 @@ with open("nodes.json", "r") as f:
 
 app = Flask(__name__)
 
+# Register HTTP inbound blueprint
+from transport.http import http_transport, init_http_transport, HttpTransport
+from daemon import Daemon
+app.register_blueprint(http_transport)
+
 
 def generate_otp() -> str:
     return secrets.token_hex(8)
@@ -160,6 +165,24 @@ def step():
 @app.route("/health", methods=["GET"])
 def health():
     return "step ok", 200
+
+# Init inbound transport
+# Init inbound transport with real vars
+import copy as _copy
+_http_transport_obj = HttpTransport()
+_peer_url = os.getenv("F42BBS_PEER_URL", "")
+_db_path = os.getenv("F42BBS_DB", "f42bbs.db")
+from db import DB as _DB
+_daemon_db = _DB(_db_path)
+_daemon = Daemon(F42BBS_NODE_ID, _daemon_db, _http_transport_obj, F42BBS_KEY)
+
+def _http_fanout(env):
+    if _peer_url:
+        ec = _copy.deepcopy(env)
+        ec.hops = env.hops + [F42BBS_NODE_ID]
+        _http_transport_obj.send(ec, _peer_url)
+_daemon._fanout = _http_fanout
+init_http_transport(_daemon, F42BBS_KEY)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=STEP_PORT, debug=False)
