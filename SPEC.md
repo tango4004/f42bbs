@@ -600,6 +600,162 @@ emergent accident.
   key: the remaining two sign a revoke of it and admit a new third. The network
   does not halt; two valid keys hold consensus while a third is found.
 
+#### The nodelist is a log, not a snapshot
+
+The nodelist must be an **append-only log of signed records**, not a signed
+snapshot of the whole list. A snapshot would need a fresh root signature on every
+change — but roots are offline, so a snapshot model contradicts offline roots.
+A log lets each record be signed by *its own author* (the sponsor of the node,
+not a root); roots sign only the genesis and root-set changes. The "list of
+nodes" is the **fold** of the log — the deterministic result of applying every
+record in order. This is exactly git: not a current file state, but a log of
+signed commits, state = replay.
+
+**Record types and who signs each:**
+
+| Op | Signed by | Verified by |
+|----|-----------|-------------|
+| `genesis` | root set (T-of-N) | T valid root sigs |
+| `admit` (node admits a child) | the sponsor (parent node) | parent sig valid AND parent itself chains to a root |
+| `revoke` (a node is revoked) | the node's sponsor | sponsor sig; cascade follows automatically |
+| `root-change` (alter the root set) | current root set (T-of-N) | T valid sigs of active roots |
+
+A record proving ownership of a key is required at admit (challenge–response:
+the node proves it holds the private key for the public key being admitted, so
+one cannot admit someone else's key).
+
+**Fold (the state every node computes locally):**
+
+```
+1. apply records in topological order (parent before child)
+2. for each node, walk the chain of sponsor signatures up to the root set
+3. all links active and sigs valid → node active
+4. any link revoked or invalid → node inactive (its subtree collapses)
+5. inactive-but-still-physically-present → pass-through mode
+```
+
+The fold is a **pure function of the log** — deterministic, identical for all,
+no judgment. Out-of-order arrival (child before parent) is held pending until
+the parent record arrives, like git refusing a commit without its parent.
+
+#### Grounds for revocation, and who may act
+
+Revocation is not arbitrary; the **ground determines the authority**:
+
+- **Objective / cryptographic** (invalid signatures, protocol violations,
+  provably non-reproducible signed results): revocable by **anyone with the
+  proof**. The evidence is self-verifying; no special authority is needed, just
+  as git rejects a badly-signed commit. Sponsorship not required.
+- **Subjective / behavioural** (bad conduct that breaks no rule literally):
+  revocable **only by the direct sponsor** (the parent who took responsibility).
+  This stays local — a parent revokes its own child, no root, no vote.
+- **Key compromise / voluntary exit**: by the holder (while they still control
+  the key) or their parent.
+
+**"A vassal of my vassal is not my vassal."** Authority is strictly one level:
+parent ↔ direct child only. A root may revoke its direct children, never a
+grandchild — that is the child's business. Root does **not** reach into foreign
+subtrees; there is no "supreme court" over the whole network. Discipline
+propagates one link at a time: a bad grandchild displeases the child (whose
+reputation it harms), whose parent may then pressure or revoke the child. Each
+link watches only its own direct children, because it answers for them with its
+own position.
+
+**Cascade is automatic.** Revoking A flips one status; A.1, A.1.1 … then fail the
+chain-walk in the fold and collapse without any per-node revoke. One status
+change, the fold does the rest.
+
+#### Admit is a sovereign right of the node
+
+Every node exposes an admit endpoint. Root is just a node with the same endpoint
+and the same rights.
+
+```
+POST /admit
+  ← newcomer sends: its pubkey, desired transports, topic interests
+  → node decides — its sovereign right:
+      accept → returns { addr: "<parent>.N", sponsor_sig }
+               and publishes an `admit` record to net.nodelist
+      reject → returns { rejected }   — binary, no reason, no trace
+```
+
+Admission is a **right, not an obligation, given without explanation** — like a
+Fido sysop taking a point or not. Decisions are **synchronous and binary**: an
+address is granted or not; there is no "pending." A rejection publishes nothing
+and leaves no record; the newcomer simply tries another node. The right to
+refuse is a feature: it is the sybil defense (you need not vouch for anyone —
+the cascade makes you answer for whom you admit) and the basis of paid
+sponsorship (a node may charge to admit; refusal is free).
+
+On accept: the parent owns its address space, so it assigns the next free
+`parent.N` with no possible collision, signs `sponsor_sig` over the newcomer's
+pubkey + address, and publishes the record. The newcomer is then valid: its
+chain runs to a root through active links.
+
+Finding a node to ask: bootstrap via `GET /nodelist` from any known node (the
+first address is learned out-of-band, as Fido nodelists were passed around),
+which returns the current fold; the newcomer reads the tree and picks a sponsor.
+
+#### Addresses route; keys identify
+
+An address (`1:42/3.7.19`) is a **path in the tree** — it is both the trust chain
+and the route. It can grow long under deep subtrees; this is fine, because it is
+only routing:
+
+- **Routing is local at every hop.** A node knows only its direct children and
+  forwards by prefix (`3.7.* → child 7`), like IP forwarding by next-hop — no
+  global routing table. Address length = tree depth = hop count, and the tree
+  grows logarithmically with branching, so even a huge network is a handful of
+  levels.
+- **Addresses are ephemeral; keys are permanent.** Changing branch (re-parenting)
+  renumbers a node and its whole subtree (`A.7 → B.3` makes `A.7.3 → B.3.3` …).
+  So a durable reference to a node MUST be by **pubkey**, not address — the key
+  is stable forever, the address floats like an IP. Everything a node ever signed
+  (lots, results, digests, sponsorships) is bound to its key, so reputation for
+  deeds survives any re-parenting; only the tree position (the revocable licence)
+  changes.
+
+A re-parented node is a **new admit of the same key** through a new sponsor: new
+address, same key, deeds preserved. An optional `prev_addr` in the admit record
+links the history if the node wants visible continuity; omitting it starts clean
+(though the shared pubkey is still discoverable).
+
+#### Network name and node names
+
+**Network name** is set in the genesis and identifies *which* network (forks
+share the protocol but not the genesis):
+
+```json
+{"op":"genesis","network_name":"F42","network_id":"1:42",
+ "roots":[...],"threshold":2,"genesis_sig":"<T-of-N>"}
+```
+
+`network_name` for humans (`F42`), `network_id` for machines (`1:42`, the Fido
+zone:net from which all addresses grow). It is immutable — changing it is a
+different network. It lets a node confirm it is joining the network it expects
+(genesis keys as anticipated), distinguishes forks, and names participants for
+eventual cross-network federation.
+
+**Node names** are cosmetic self-attribution, not identifiers, carried in a
+reserved topic `net.names` (as `net.nodelist` carries topology):
+
+```json
+{"addr":"1:42/3.7","key":"ed25519:0xABC","name":"benchmark-gpu-lab",
+ "desc":"RTX 5090, 1-bit inference","sig":"<signed with the node's OWN key>"}
+```
+
+A node declares how it wishes to be called, signed with its own key — which
+proves self-attribution and makes name-squatting impossible (you can name only
+yourself, because the signature must match the node's key in the nodelist).
+**Collisions are harmless**: names are not identifiers, so two `gpu-lab` nodes
+are simply disambiguated by address in the UI (`gpu-lab (1:42/3.7)`). Resolution
+is **client-side** — each client folds `net.names` into a local `{name → [addr]}`
+table; there is no central naming service, no arbiter. Names bind to the key, so
+they survive re-parenting (re-publish with the new address, same key, same name);
+the numeric address is always the anchor. The record extends to any cosmetic
+metadata (description, tags, contacts) — all self-signed, all ignored by the
+network, all shown only to humans.
+
 #### Ordering
 
 This is Phase 2, and it presupposes R2 (ed25519). Build order: R1/R2 signing →
@@ -632,5 +788,14 @@ beyond a single operator.
   constants, the set self-amends under its current threshold, transitions are
   atomic by nodelist version; T is explicit with `floor(N/2)+1` as default
   guidance. Capture-resistance grows with T, key-loss survival with (N−T).
+  Detailed nodelist mechanics: append-only log of signed records (not a snapshot,
+  which would need online roots); record types (genesis/admit/revoke/root-change)
+  with per-type signers; deterministic fold to state; grounds-determine-authority
+  (objective→anyone with proof, subjective→direct sponsor only); one-level
+  authority ("a vassal of my vassal is not my vassal") with automatic cascade;
+  admit as a sovereign synchronous binary right (address or not, no reason, no
+  trace); local prefix routing, ephemeral addresses vs permanent keys; naming —
+  immutable network_name in genesis + cosmetic self-signed node names over a
+  `net.names` topic (collisions harmless, client-side resolution, bound to key).
 - **v0.1** — Initial draft: Fido-style BBS over AgentMail; inbox-as-node,
   email-as-packet.
