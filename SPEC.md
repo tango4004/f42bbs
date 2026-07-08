@@ -517,8 +517,49 @@ The nodelist carries the root set:
   "threshold": 2
 }
 ```
-Every node verifies that root-set changes are signed by 2-of-3 current active
-root keys, and that each node's sponsor chain terminates at an active root.
+Every node verifies that root-set changes are signed by the **current
+threshold** of active root keys, and that each node's sponsor chain terminates at
+an active root.
+
+#### The root set is extensible by its own rules
+
+The set is defined by two numbers, not one: **N** — how many root keys exist
+(the size of `roots`) — and **T** — how many signatures a root operation needs
+(`threshold`). 2-of-3 is the sensible *start*, not a fixed law. Extensibility is
+designed in from day one so that growing the set later is a data change, not a
+fork.
+
+- **N and T are data, never constants.** Verification is "are there T valid
+  signatures from distinct active roots," never "are there 2 of these three."
+  Moving from 2-of-3 to 3-of-5 is then a change to the nodelist, not to code.
+- **The set changes itself under its own current threshold.** To go from 2-of-3
+  to 3-of-5, the *current* 2-of-3 signs a record `{add root-4, root-5,
+  threshold=3}`. It propagates; every node checks it was signed by a valid 2-of-3;
+  then the new set is active and 3-of-5 governs. The root set is thus
+  self-amending, like a constitution that contains the procedure for its own
+  amendment — without this, expansion would be a fork.
+- **Transitions are atomic by version.** The dangerous moment is the switch
+  itself: while the "now 3-of-5" record propagates, some nodes still think 2-of-3.
+  A new set takes effect only once the record defining it has itself reached the
+  *old* threshold and fully replicated; the nodelist version/timestamp resolves
+  the transitional window (the nodelist is a versioned signed object precisely for
+  this).
+
+The two properties this balances:
+
+```
+resistance to capture  grows with T      (more signers must collude)
+survival of key loss   grows with (N−T)  (this many keys can be lost)
+```
+
+2-of-3 balances them: capture needs 2 (not 1), loss survives 1. A mature network
+may move to 3-of-5 (survives losing two keys, capture needs three) at the cost of
+five independent holders instead of three.
+
+**T is explicit in the format**, not derived, so a network can choose a
+paranoid ratio (e.g. 4-of-5) if it wants. Recommended default when unspecified is
+simple majority, `T = floor(N/2) + 1` (N=3→2, N=5→3, N=7→4). The format permits
+any `T ≤ N`; the default is merely guidance.
 
 #### Progressive decentralization
 
@@ -586,6 +627,10 @@ beyond a single operator.
   admission by sponsor signature, nodelist as a replicated tree of ed25519
   signatures (git-like), root as 2-of-3 offline keys (not servers), progressive
   decentralization (Phase 0→3 with an explicit honesty requirement), and
-  revocation by pass-through (node) / 2-of-3 rotation (root key).
+  revocation by pass-through (node) / 2-of-3 rotation (root key). Root set is
+  extensible by its own rules: N (set size) and T (threshold) are data not
+  constants, the set self-amends under its current threshold, transitions are
+  atomic by nodelist version; T is explicit with `floor(N/2)+1` as default
+  guidance. Capture-resistance grows with T, key-loss survival with (N−T).
 - **v0.1** — Initial draft: Fido-style BBS over AgentMail; inbox-as-node,
   email-as-packet.
