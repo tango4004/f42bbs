@@ -127,6 +127,43 @@ class DB:
         rows = cursor.fetchall()
         return [row[0] for row in rows]
 
+    def get_latest_post(self, topic: str):
+        """Get latest POST body for a topic (for auto-DIGEST response)"""
+        import json as _json
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT raw FROM messages WHERE topic=? AND type='POST' ORDER BY created_at DESC LIMIT 1",
+            (topic,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        try:
+            d = _json.loads(row[0])
+            return d.get('body')
+        except Exception:
+            return row[0]
+
+    def store_digest(self, corr_msg_id: str, topic: str, body: str):
+        """Store incoming DIGEST keyed by corr_msg_id"""
+        import time as _time
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "INSERT OR REPLACE INTO messages (msg_id, type, origin, topic, raw, created_at) VALUES (?,?,?,?,?,?)",
+            (f"digest:{corr_msg_id}", 'DIGEST', 'remote', topic, body, int(_time.time()))
+        )
+        self.connection.commit()
+
+    def get_digest(self, corr_msg_id: str) -> str:
+        """Get DIGEST body for a given REQUEST msg_id"""
+        cursor = self.connection.cursor()
+        cursor.execute(
+            "SELECT raw FROM messages WHERE msg_id=? AND type='DIGEST'",
+            (f"digest:{corr_msg_id}",)
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
+
     def get_latest(self, topic: str) -> Optional[str]:
         import json as _json
         cursor = self.connection.cursor()

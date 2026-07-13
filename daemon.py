@@ -34,15 +34,52 @@ class Daemon:
             json.dumps(env.emit())
         )
         
-        # 5. Areafix
+        # 5. Handle by type
         if env.topic == "areafix":
             return self._handle_areafix(env)
-        
-        # 6. Fan-out
+
+        if env.type == "DIGEST":
+            # DIGEST: store keyed by corr ref, do NOT fanout
+            corr = next((r for r in (env.refs or []) if r.startswith("corr:")), None)
+            if corr:
+                corr_id = corr[5:]
+                self.db.store_digest(corr_id, env.topic, env.body)
+            return "ok_digest"
+
+        if env.type == "REQUEST":
+            # AUTO-RESPOND: send DIGEST back with latest POST for this topic
+            self._auto_digest(env)
+
+        # 6. Fan-out (POST and REQUEST)
         self._fanout(env)
-        
+
         # 7. Return ok
         return "ok"
+
+    def _auto_digest(self, req_env) -> None:
+        """Respond to REQUEST with a DIGEST of latest POST on that topic"""
+        import time as _t
+        latest = self.db.get_latest_post(req_env.topic)
+        if not latest:
+            return  # nothing to answer with
+        from envelope import make_msg_id, sign, Envelope
+        ts = str(int(_t.time()))
+        body = latest
+        refs = [f"corr:{req_env.msg_id}"]
+        msg_id = make_msg_id(self.node_id, ts, body)
+        hmac_val = sign(self.shared_key, msg_id, self.node_id, req_env.topic, body)
+        digest = Envelope(
+            ver="0.2", type="DIGEST",
+            msg_id=msg_id, origin=self.node_id,
+            topic=req_env.topic,
+            from_=self.node_id, to=req_env.origin,
+            subject=f"DIGEST {req_env.topic}",
+            timestamp=ts, hops=[self.node_id],
+            max_hops=req_env.max_hops,
+            hmac=hmac_val, body=body, refs=refs
+        )
+        self._fanout(digest)
+
 
     def _handle_areafix(self, env: Envelope) -> str:
         body = env.body.strip()

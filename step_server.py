@@ -125,6 +125,40 @@ def execute_command(command: str) -> str:
         except:
             return msg_body
     
+    elif cmd == "request":
+        topic = None
+        query = None
+        for part in parts[1:]:
+            if part.startswith("topic="):
+                topic = part[6:]
+            elif part.startswith("query="):
+                query = "=".join(part.split("=")[1:])
+        if not topic:
+            return "error: request requires topic=<name>"
+        if not query:
+            query = f"latest on {topic}"
+
+        import time as _t
+        ts = str(int(_t.time()))
+        msg_id = make_msg_id(F42BBS_NODE_ID, ts, query)
+        hmac_val = sign(F42BBS_KEY, msg_id, F42BBS_NODE_ID, topic, query)
+        req_env = Envelope(
+            ver="0.2", type="REQUEST",
+            msg_id=msg_id, origin=F42BBS_NODE_ID,
+            topic=topic, from_=F42BBS_NODE_ID, to="*",
+            subject=f"REQUEST {topic}",
+            timestamp=ts, hops=[], max_hops=10,
+            hmac=hmac_val, body=query, refs=[]
+        )
+        _daemon.inbound(req_env)
+
+        for _ in range(20):
+            _t.sleep(0.5)
+            digest = db.get_digest(msg_id)
+            if digest:
+                return digest
+        return "no digest received (timeout 10s)"
+
     else:
         return "error: unknown command"
 
