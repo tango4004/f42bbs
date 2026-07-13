@@ -3,29 +3,46 @@
     {
       "node_id": "1:42/1",
       "name": "arm1",
-      "transports": ["agentmail:f42bbs-arm1@agentmail.to"],
-      "topics": ["hello-world"],
+      "transports": [
+        "agentmail:f42bbs-arm1@agentmail.to"
+      ],
+      "topics": [
+        "hello-world"
+      ],
       "trust": "trusted"
     },
     {
       "node_id": "1:42/2",
       "name": "arm2",
-      "transports": ["agentmail:f42bbs-arm2@agentmail.to"],
-      "topics": ["hello-world"],
+      "transports": [
+        "agentmail:f42bbs-arm2@agentmail.to",
+        "http:http://10.0.0.73:8003/f42bbs/inbound"
+      ],
+      "topics": [
+        "hello-world"
+      ],
       "trust": "trusted"
     },
     {
       "node_id": "1:42/3",
       "name": "amd1",
-      "transports": ["https:https://bbs3.foxtrot42.org/f42bbs/inbound"],
-      "topics": ["hello-world"],
+      "transports": [
+        "https:https://bbs3.foxtrot42.org/f42bbs/inbound"
+      ],
+      "topics": [
+        "hello-world"
+      ],
       "trust": "trusted"
     },
     {
       "node_id": "1:42/4",
       "name": "amd2",
-      "transports": ["https:https://bbs4.foxtrot42.org/f42bbs/inbound"],
-      "topics": ["hello-world"],
+      "transports": [
+        "https:https://bbs4.foxtrot42.org/f42bbs/inbound"
+      ],
+      "topics": [
+        "hello-world"
+      ],
       "trust": "trusted"
     }
   ]

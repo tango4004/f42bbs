@@ -170,17 +170,18 @@ def health():
 # Init inbound transport with real vars
 import copy as _copy
 _http_transport_obj = HttpTransport()
-_peer_url = os.getenv("F42BBS_PEER_URL", "")
+_peer_urls_raw = os.getenv("F42BBS_PEER_URLS", "") or os.getenv("F42BBS_PEER_URL", "")
+_peer_urls = [u.strip() for u in _peer_urls_raw.split(",") if u.strip()]
 _db_path = os.getenv("F42BBS_DB", "f42bbs.db")
 from db import DB as _DB
 _daemon_db = _DB(_db_path)
 _daemon = Daemon(F42BBS_NODE_ID, _daemon_db, _http_transport_obj, F42BBS_KEY)
 
 def _http_fanout(env):
-    if _peer_url:
+    for peer_url in _peer_urls:
         ec = _copy.deepcopy(env)
         ec.hops = env.hops + [F42BBS_NODE_ID]
-        _http_transport_obj.send(ec, _peer_url)
+        _http_transport_obj.send(ec, peer_url)
 _daemon._fanout = _http_fanout
 init_http_transport(_daemon, F42BBS_KEY)
 
