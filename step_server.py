@@ -65,11 +65,17 @@ def execute_command(command: str) -> str:
     elif cmd == "publish":
         topic = None
         body = None
-        for part in parts[1:]:
-            if part.startswith("topic="):
-                topic = part[6:]
-            elif part.startswith("body="):
-                body = "=".join(part.split("=")[1:])
+        # body= takes everything to end of line (may contain spaces)
+        raw = " ".join(parts[1:])
+        import re as _re
+        m_topic = _re.search(r'topic=(\S+)', raw)
+        m_body = _re.search(r'body=(.+?)(?:\s+topic=|$)', raw)
+        if not m_body:
+            m_body = _re.search(r'body=(.+)', raw)
+        if m_topic:
+            topic = m_topic.group(1)
+        if m_body:
+            body = m_body.group(1).strip()
         
         if not topic or not body:
             return "error: publish requires topic=<name> body=<text>"
