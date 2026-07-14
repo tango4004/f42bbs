@@ -4,7 +4,7 @@ import secrets
 import time
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-from flask import Flask, request, Response
+from flask import Flask, request, Response, jsonify
 import requests
 
 from db import DB
@@ -218,6 +218,42 @@ def _http_fanout(env):
         _http_transport_obj.send(ec, peer_url)
 _daemon._fanout = _http_fanout
 init_http_transport(_daemon, F42BBS_KEY)
+
+@app.route('/admit', methods=['POST'])
+def admit():
+    """Admission endpoint — sovereign right to accept or reject new nodes"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"rejected": "bad request"}), 400
+
+        node_id = data.get("id", "").strip()
+        transports = data.get("transports", [])
+        topics = data.get("topics", [])
+
+        if not node_id:
+            return jsonify({"rejected": "missing id"}), 400
+
+        # Assign child address: parent.N
+        parent = F42BBS_NODE_ID
+        existing = db.get_peers()
+        children = [p for p in existing if p.get('node_id', '').startswith(parent + '.')]
+        n = len(children) + 1
+        child_addr = f"{parent}.{n}"
+
+        # Register as peer
+        transport = transports[0] if transports else ""
+        db.add_peer(child_addr, node_id, transport, "unverified")
+
+        return jsonify({
+            "addr": child_addr,
+            "parent": parent,
+            "status": "admitted"
+        }), 200
+
+    except Exception as e:
+        return jsonify({"rejected": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=STEP_PORT, debug=False)
