@@ -178,27 +178,27 @@ def step():
         new_otp = generate_otp()
         otp_chain[new_otp] = time.time()
         result = execute_command(command)
-        return Response(f"%{new_otp}% {result}", content_type="text/plain")
+        return Response(f"%{new_otp}% {result}", content_type="text/plain; charset=utf-8")
     
     elif body.startswith("%"):
         parts = body.split("%", 2)
         if len(parts) < 3:
-            return Response("error: invalid otp", content_type="text/plain", status=400)
+            return Response("error: invalid otp", content_type="text/plain; charset=utf-8", status=400)
         
         otp_str = parts[1].strip()
         command = parts[2].strip()
         
         if not validate_otp(otp_str):
-            return Response("error: invalid otp", content_type="text/plain", status=401)
+            return Response("error: invalid otp", content_type="text/plain; charset=utf-8", status=401)
         
         del otp_chain[otp_str]
         new_otp = generate_otp()
         otp_chain[new_otp] = time.time()
         
         result = execute_command(command)
-        return Response(f"%{new_otp}% {result}", content_type="text/plain")
+        return Response(f"%{new_otp}% {result}", content_type="text/plain; charset=utf-8")
     
-    return Response("error: invalid request", content_type="text/plain", status=400)
+    return Response("error: invalid request", content_type="text/plain; charset=utf-8", status=400)
 
 
 
