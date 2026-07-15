@@ -171,7 +171,7 @@ def execute_command(command: str) -> str:
 
 @app.route("/step", methods=["POST"])
 def step():
-    body = request.get_data(as_text=True).strip()
+    body = request.get_data(as_text=False).decode("utf-8", errors="replace").strip()
     
     if body.startswith(","):
         command = body[1:].strip()
